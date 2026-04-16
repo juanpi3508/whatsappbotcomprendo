@@ -1,7 +1,6 @@
 import express from "express";
 import dotenv from "dotenv";
 import twilio from "twilio";
-import { GoogleGenAI } from "@google/genai";
 
 dotenv.config();
 
@@ -16,113 +15,52 @@ const twilioClient = twilio(
   process.env.TWILIO_AUTH_TOKEN
 );
 
-const ai = new GoogleGenAI({
-  apiKey: process.env.GEMINI_API_KEY,
-});
-
-// Estado simple en memoria para PMV
 const state = {
-  classTopic: "ecuaciones lineales",
-  quiz: [],
-  studentSessions: {},
+  question: null,
+  correctAnswer: null,
   responses: []
 };
 
-// -----------------------------
-// Helpers
-// -----------------------------
+function generateQuestion(topic) {
+  const t = String(topic || "").toLowerCase();
 
-function normalizeGeminiJson(text) {
-  if (!text || typeof text !== "string") {
-    throw new Error("Gemini no devolvio texto valido.");
+  if (t.includes("ecuaciones")) {
+    return {
+      question: "¿Cuál es el valor de x en 2x + 3 = 11?",
+      options: {
+        A: "3",
+        B: "4",
+        C: "5",
+        D: "6"
+      },
+      correct: "B"
+    };
   }
 
-  // Quita fences ```json ... ```
-  const cleaned = text
-    .replace(/```json/gi, "")
-    .replace(/```/g, "")
-    .trim();
-
-  return cleaned;
-}
-
-async function generateQuiz(topic) {
-  const response = await ai.models.generateContent({
-    model: "gemini-2.0-flash",
-    contents: `Devuelve solo JSON valido con 3 preguntas de opcion multiple sobre ${topic}. Formato exacto:
-{"questions":[
-{"question":"texto","options":{"A":"texto","B":"texto","C":"texto","D":"texto"},"correct":"A"},
-{"question":"texto","options":{"A":"texto","B":"texto","C":"texto","D":"texto"},"correct":"B"},
-{"question":"texto","options":{"A":"texto","B":"texto","C":"texto","D":"texto"},"correct":"C"}
-]}`
-  });
-
-  const rawText = response.text;
-  const cleaned = normalizeGeminiJson(rawText);
-  return JSON.parse(cleaned);
-}
-
-async function sendWhatsAppMessage(to, body) {
-  return twilioClient.messages.create({
-    from: process.env.TWILIO_WHATSAPP_NUMBER,
-    to,
-    body
-  });
-}
-
-async function sendQuestion(to, questionIndex) {
-  const q = state.quiz[questionIndex];
-
-  const body = `Pregunta ${questionIndex + 1}/3
-
-${q.question}
-
-A) ${q.options.A}
-B) ${q.options.B}
-C) ${q.options.C}
-D) ${q.options.D}
-
-Responde solo con A, B, C o D.`;
-
-  await sendWhatsAppMessage(to, body);
-}
-
-function gradeAnswers(quiz, answers) {
-  let correctCount = 0;
-  const results = [];
-
-  for (let i = 0; i < quiz.length; i++) {
-    const studentAnswer = answers[i] || null;
-    const correctAnswer = quiz[i].correct;
-    const isCorrect = studentAnswer === correctAnswer;
-
-    if (isCorrect) {
-      correctCount++;
-    }
-
-    results.push({
-      question: i + 1,
-      studentAnswer,
-      correctAnswer,
-      isCorrect
-    });
+  if (t.includes("fotosintesis")) {
+    return {
+      question: "¿Qué necesitan las plantas para realizar la fotosíntesis?",
+      options: {
+        A: "Luz solar, agua y dióxido de carbono",
+        B: "Solo oxígeno",
+        C: "Solo agua",
+        D: "Solo tierra"
+      },
+      correct: "A"
+    };
   }
-
-  let level = "bajo";
-  if (correctCount === 2) level = "medio";
-  if (correctCount === 3) level = "alto";
 
   return {
-    correctCount,
-    total: quiz.length,
-    level,
-    results
+    question: `¿Cuál fue la idea principal de la clase sobre ${topic}?`,
+    options: {
+      A: "Un concepto secundario",
+      B: "La idea central explicada en clase",
+      C: "Un tema no relacionado",
+      D: "Una fecha del calendario"
+    },
+    correct: "B"
   };
 }
-
-// -----------------------------
-// Rutas
-// -----------------------------
 
 app.get("/health", (req, res) => {
   res.json({
@@ -133,11 +71,10 @@ app.get("/health", (req, res) => {
 
 app.get("/report", (req, res) => {
   res.json({
-    topic: state.classTopic,
-    quiz: state.quiz,
+    question: state.question,
+    correctAnswer: state.correctAnswer,
     totalResponses: state.responses.length,
-    responses: state.responses,
-    sessions: state.studentSessions
+    responses: state.responses
   });
 });
 
@@ -146,34 +83,34 @@ app.post("/start-class", async (req, res) => {
     const topic = req.body.topic || "ecuaciones lineales";
     const studentNumber = req.body.studentNumber || process.env.STUDENT_NUMBER;
 
-    const data = await generateQuiz(topic);
+    const q = generateQuestion(topic);
 
-    state.classTopic = topic;
-    state.quiz = data.questions;
+    state.question = q;
+    state.correctAnswer = q.correct;
     state.responses = [];
 
-    state.studentSessions[studentNumber] = {
-      currentQuestion: 0,
-      answers: [],
-      completed: false,
-      startedAt: new Date().toISOString()
-    };
+    const body = `Cierre de clase: ${topic}
 
-    await sendWhatsAppMessage(
-      studentNumber,
-      `Hola. Vamos a hacer un cierre de clase sobre: ${topic}.
+${q.question}
 
-Te enviare 3 preguntas, una por una.
-Responde cada una solo con A, B, C o D.`
-    );
+A) ${q.options.A}
+B) ${q.options.B}
+C) ${q.options.C}
+D) ${q.options.D}
 
-    await sendQuestion(studentNumber, 0);
+Responde solo con A, B, C o D.`;
+
+    const msg = await twilioClient.messages.create({
+      from: process.env.TWILIO_WHATSAPP_NUMBER,
+      to: studentNumber,
+      body
+    });
 
     res.json({
       ok: true,
       topic,
-      quizGenerated: true,
-      firstQuestionSent: true
+      question: q.question,
+      twilioMessageSid: msg.sid
     });
   } catch (error) {
     console.error("ERROR /start-class:", error);
@@ -189,77 +126,47 @@ app.post("/whatsapp", async (req, res) => {
 
   try {
     const from = req.body.From;
-    const body = (req.body.Body || "").trim().toUpperCase();
+    const answer = (req.body.Body || "").trim().toUpperCase();
 
-    const session = state.studentSessions[from];
-
-    if (!session) {
-      twiml.message("No tienes un cuestionario activo en este momento.");
+    if (!state.question || !state.correctAnswer) {
+      twiml.message("No hay una pregunta activa en este momento.");
       return res.type("text/xml").send(twiml.toString());
     }
 
-    if (session.completed) {
-      twiml.message("Ya completaste este cuestionario.");
+    if (!["A", "B", "C", "D"].includes(answer)) {
+      twiml.message("Respuesta no válida. Responde solo con A, B, C o D.");
       return res.type("text/xml").send(twiml.toString());
     }
 
-    if (!["A", "B", "C", "D"].includes(body)) {
-      twiml.message("Respuesta no valida. Responde solo con A, B, C o D.");
-      return res.type("text/xml").send(twiml.toString());
-    }
+    const correct = state.correctAnswer;
+    const isCorrect = answer === correct;
 
-    // Guardar respuesta
-    session.answers[session.currentQuestion] = body;
-    session.currentQuestion += 1;
-
-    // Si aun faltan preguntas, enviar la siguiente
-    if (session.currentQuestion < state.quiz.length) {
-      await sendQuestion(from, session.currentQuestion);
-      return res.type("text/xml").send(twiml.toString());
-    }
-
-    // Si ya termino, corregir
-    session.completed = true;
-    session.completedAt = new Date().toISOString();
-
-    const grading = gradeAnswers(state.quiz, session.answers);
-
-    const resultRecord = {
+    state.responses.push({
       from,
-      topic: state.classTopic,
-      answers: session.answers,
-      grading,
+      answer,
+      correct,
+      isCorrect,
       at: new Date().toISOString()
-    };
-
-    state.responses.push(resultRecord);
+    });
 
     twiml.message(
-      `Gracias. Completaste el cuestionario.
-
-Puntaje: ${grading.correctCount}/${grading.total}
-Nivel: ${grading.level}`
+      isCorrect
+        ? "Correcto ✅"
+        : `Incorrecto ❌. La respuesta correcta era ${correct}`
     );
 
-    // Reporte al docente
     if (process.env.TEACHER_NUMBER) {
-      const detailLines = grading.results
-        .map((r) => {
-          return `Pregunta ${r.question}: respondio ${r.studentAnswer}, correcta ${r.correctAnswer}, ${r.isCorrect ? "correcta" : "incorrecta"}`;
-        })
-        .join("\n");
+      await twilioClient.messages.create({
+        from: process.env.TWILIO_WHATSAPP_NUMBER,
+        to: process.env.TEACHER_NUMBER,
+        body: `Nuevo reporte
 
-      await sendWhatsAppMessage(
-        process.env.TEACHER_NUMBER,
-        `Nuevo reporte de estudiante
-
-Tema: ${state.classTopic}
-Puntaje: ${grading.correctCount}/${grading.total}
-Nivel: ${grading.level}
-
-Detalle:
-${detailLines}`
-      );
+Estudiante: ${from}
+Pregunta: ${state.question.question}
+Respuesta estudiante: ${answer}
+Respuesta correcta: ${correct}
+Resultado: ${isCorrect ? "Correcto" : "Incorrecto"}`
+      });
     }
 
     return res.type("text/xml").send(twiml.toString());
