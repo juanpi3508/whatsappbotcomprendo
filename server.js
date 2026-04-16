@@ -1,7 +1,6 @@
 import express from "express";
 import dotenv from "dotenv";
 import twilio from "twilio";
-import { GoogleGenAI } from "@google/genai";
 
 dotenv.config();
 
@@ -16,10 +15,6 @@ const twilioClient = twilio(
   process.env.TWILIO_AUTH_TOKEN
 );
 
-const ai = new GoogleGenAI({
-  apiKey: process.env.GEMINI_API_KEY,
-});
-
 const state = {
   question: null,
   correctAnswer: null,
@@ -28,7 +23,7 @@ const state = {
 
 function cleanJson(text) {
   if (!text) {
-    throw new Error("Gemini no devolvio texto.");
+    throw new Error("OpenRouter no devolvio texto.");
   }
 
   return text
@@ -38,9 +33,24 @@ function cleanJson(text) {
 }
 
 async function generateQuestion(topic) {
-  const response = await ai.models.generateContent({
-    model: "gemini-2.0-flash",
-    contents: `Devuelve SOLO JSON valido con exactamente esta estructura:
+  const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+    method: "POST",
+    headers: {
+      "Authorization": `Bearer ${process.env.OPENROUTER_API_KEY}`,
+      "Content-Type": "application/json",
+      "HTTP-Referer": "https://whatsappbotcomprendo-production.up.railway.app",
+      "X-Title": "WhatsApp Bot Comprendo"
+    },
+    body: JSON.stringify({
+      model: "openrouter/free",
+      messages: [
+        {
+          role: "system",
+          content: "Eres un asistente educativo. Devuelve solo JSON valido."
+        },
+        {
+          role: "user",
+          content: `Devuelve SOLO JSON valido con exactamente esta estructura:
 {
   "question": "pregunta corta sobre ${topic}",
   "options": {
@@ -58,10 +68,21 @@ Reglas:
 - Una sola respuesta correcta
 - Nivel bachillerato
 - No expliques nada fuera del JSON`
+        }
+      ],
+      temperature: 0.4,
+      max_tokens: 250
+    })
   });
 
-  const rawText = response.text;
-  const cleaned = cleanJson(rawText);
+  const data = await response.json();
+
+  if (!response.ok) {
+    throw new Error(JSON.stringify(data));
+  }
+
+  const text = data.choices?.[0]?.message?.content;
+  const cleaned = cleanJson(text);
   const parsed = JSON.parse(cleaned);
 
   if (
@@ -73,7 +94,7 @@ Reglas:
     !parsed.options.D ||
     !["A", "B", "C", "D"].includes(parsed.correct)
   ) {
-    throw new Error("Gemini devolvio un formato invalido.");
+    throw new Error("OpenRouter devolvio un formato invalido.");
   }
 
   return parsed;
