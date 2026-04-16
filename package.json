@@ -1,16 +1,16 @@
 {
   "name": "bot-whatsapp-comprendo",
   "version": "1.0.0",
-  "description": "Bot WhatsApp PMV Comprendo",
+  "description": "Bot de WhatsApp para preguntas de comprension con Gemini",
   "main": "server.js",
   "type": "module",
   "scripts": {
     "start": "node server.js"
   },
   "dependencies": {
-    "@google/genai": "^1.50.1",
-    "dotenv": "^16.4.5",
-    "express": "^4.21.2",
-    "twilio": "^5.0.0"
+    "@google/genai": "^1.15.0",
+    "dotenv": "^16.6.1",
+    "express": "^4.22.1",
+    "twilio": "^5.7.0"
   }
 }
