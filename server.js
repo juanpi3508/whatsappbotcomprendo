@@ -49,83 +49,17 @@ function normalizeGeminiJson(text) {
 async function generateQuiz(topic) {
   const response = await ai.models.generateContent({
     model: "gemini-2.0-flash",
-    contents: `
-Genera exactamente 3 preguntas de opcion multiple para estudiantes de bachillerato sobre el tema: ${topic}.
-
-Reglas:
-- Devuelve exactamente 3 preguntas
-- Cada pregunta debe tener 4 opciones: A, B, C, D
-- Debe haber una sola respuesta correcta
-- Las preguntas deben ser claras, breves y adecuadas para estudiantes de 14 a 18 anos
-- Devuelve SOLO JSON valido
-- No incluyas markdown
-- No incluyas explicaciones fuera del JSON
-
-Estructura exacta:
-{
-  "questions": [
-    {
-      "question": "texto",
-      "options": {
-        "A": "texto",
-        "B": "texto",
-        "C": "texto",
-        "D": "texto"
-      },
-      "correct": "A"
-    },
-    {
-      "question": "texto",
-      "options": {
-        "A": "texto",
-        "B": "texto",
-        "C": "texto",
-        "D": "texto"
-      },
-      "correct": "B"
-    },
-    {
-      "question": "texto",
-      "options": {
-        "A": "texto",
-        "B": "texto",
-        "C": "texto",
-        "D": "texto"
-      },
-      "correct": "C"
-    }
-  ]
-}
-`
+    contents: `Devuelve solo JSON valido con 3 preguntas de opcion multiple sobre ${topic}. Formato exacto:
+{"questions":[
+{"question":"texto","options":{"A":"texto","B":"texto","C":"texto","D":"texto"},"correct":"A"},
+{"question":"texto","options":{"A":"texto","B":"texto","C":"texto","D":"texto"},"correct":"B"},
+{"question":"texto","options":{"A":"texto","B":"texto","C":"texto","D":"texto"},"correct":"C"}
+]}`
   });
 
   const rawText = response.text;
   const cleaned = normalizeGeminiJson(rawText);
-  const parsed = JSON.parse(cleaned);
-
-  if (
-    !parsed.questions ||
-    !Array.isArray(parsed.questions) ||
-    parsed.questions.length !== 3
-  ) {
-    throw new Error("Gemini no devolvio exactamente 3 preguntas.");
-  }
-
-  for (const q of parsed.questions) {
-    if (
-      !q.question ||
-      !q.options ||
-      !q.options.A ||
-      !q.options.B ||
-      !q.options.C ||
-      !q.options.D ||
-      !["A", "B", "C", "D"].includes(q.correct)
-    ) {
-      throw new Error("El formato del quiz generado es invalido.");
-    }
-  }
-
-  return parsed;
+  return JSON.parse(cleaned);
 }
 
 async function sendWhatsAppMessage(to, body) {
