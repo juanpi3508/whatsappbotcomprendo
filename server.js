@@ -21,17 +21,6 @@ const state = {
   responses: []
 };
 
-function cleanJson(text) {
-  if (!text) {
-    throw new Error("OpenRouter no devolvio texto.");
-  }
-
-  return text
-    .replace(/```json/gi, "")
-    .replace(/```/g, "")
-    .trim();
-}
-
 async function generateQuestion(topic) {
   const fallback = {
     question: "¿Cuál es el valor de x en 2x + 3 = 11?",
@@ -140,8 +129,23 @@ app.get("/report", (req, res) => {
 
 app.post("/start-class", async (req, res) => {
   try {
-    const topic = req.body.topic || "ecuaciones lineales";
+    const topic = String(req.body.topic || "").trim();
     const studentNumber = req.body.studentNumber || process.env.STUDENT_NUMBER;
+
+    // Validacion obligatoria: sin topic no se genera ni se envia nada
+    if (!topic) {
+      return res.status(400).json({
+        ok: false,
+        error: "El campo 'topic' es obligatorio. No se envio ninguna pregunta."
+      });
+    }
+
+    if (!studentNumber) {
+      return res.status(400).json({
+        ok: false,
+        error: "No se encontro el numero del estudiante."
+      });
+    }
 
     const q = await generateQuestion(topic);
 
