@@ -33,71 +33,93 @@ function cleanJson(text) {
 }
 
 async function generateQuestion(topic) {
-  const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
-    method: "POST",
-    headers: {
-      "Authorization": `Bearer ${process.env.OPENROUTER_API_KEY}`,
-      "Content-Type": "application/json",
-      "HTTP-Referer": "https://whatsappbotcomprendo-production.up.railway.app",
-      "X-Title": "WhatsApp Bot Comprendo"
+  const fallback = {
+    question: "¿Cuál es el valor de x en 2x + 3 = 11?",
+    options: {
+      A: "3",
+      B: "4",
+      C: "5",
+      D: "6"
     },
-    body: JSON.stringify({
-      model: "openrouter/free",
-      messages: [
-        {
-          role: "system",
-          content: "Eres un asistente educativo. Devuelve solo JSON valido."
-        },
-        {
-          role: "user",
-          content: `Devuelve SOLO JSON valido con exactamente esta estructura:
-{
-  "question": "pregunta corta sobre ${topic}",
-  "options": {
-    "A": "opcion",
-    "B": "opcion",
-    "C": "opcion",
-    "D": "opcion"
-  },
-  "correct": "A"
-}
+    correct: "B"
+  };
 
-Reglas:
-- Una sola pregunta
-- 4 opciones
-- Una sola respuesta correcta
-- Nivel bachillerato
-- No expliques nada fuera del JSON`
-        }
-      ],
-      temperature: 0.4,
-      max_tokens: 250
-    })
-  });
+  try {
+    const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${process.env.OPENROUTER_API_KEY}`,
+        "Content-Type": "application/json",
+        "HTTP-Referer": "https://whatsappbotcomprendo-production.up.railway.app",
+        "X-Title": "WhatsApp Bot Comprendo"
+      },
+      body: JSON.stringify({
+        model: "openrouter/free",
+        messages: [
+          {
+            role: "system",
+            content: "Devuelve solo JSON valido. No uses markdown."
+          },
+          {
+            role: "user",
+            content: `Genera 1 pregunta de opcion multiple sobre ${topic}.
+Devuelve SOLO este formato JSON:
+{"question":"texto","options":{"A":"texto","B":"texto","C":"texto","D":"texto"},"correct":"A"}`
+          }
+        ],
+        temperature: 0.2,
+        max_tokens: 180
+      })
+    });
 
-  const data = await response.json();
+    const data = await response.json();
 
-  if (!response.ok) {
-    throw new Error(JSON.stringify(data));
+    if (!response.ok) {
+      console.error("OpenRouter error:", JSON.stringify(data));
+      return fallback;
+    }
+
+    let text = data?.choices?.[0]?.message?.content;
+
+    if (!text || typeof text !== "string") {
+      console.error("OpenRouter content vacio:", JSON.stringify(data));
+      return fallback;
+    }
+
+    text = text
+      .replace(/```json/gi, "")
+      .replace(/```/g, "")
+      .trim();
+
+    const firstBrace = text.indexOf("{");
+    const lastBrace = text.lastIndexOf("}");
+
+    if (firstBrace === -1 || lastBrace === -1 || lastBrace <= firstBrace) {
+      console.error("No se encontro JSON valido en:", text);
+      return fallback;
+    }
+
+    const jsonText = text.slice(firstBrace, lastBrace + 1);
+    const parsed = JSON.parse(jsonText);
+
+    if (
+      !parsed.question ||
+      !parsed.options ||
+      !parsed.options.A ||
+      !parsed.options.B ||
+      !parsed.options.C ||
+      !parsed.options.D ||
+      !["A", "B", "C", "D"].includes(parsed.correct)
+    ) {
+      console.error("Formato invalido devuelto por OpenRouter:", parsed);
+      return fallback;
+    }
+
+    return parsed;
+  } catch (error) {
+    console.error("Fallo generateQuestion, usando fallback:", error.message);
+    return fallback;
   }
-
-  const text = data.choices?.[0]?.message?.content;
-  const cleaned = cleanJson(text);
-  const parsed = JSON.parse(cleaned);
-
-  if (
-    !parsed.question ||
-    !parsed.options ||
-    !parsed.options.A ||
-    !parsed.options.B ||
-    !parsed.options.C ||
-    !parsed.options.D ||
-    !["A", "B", "C", "D"].includes(parsed.correct)
-  ) {
-    throw new Error("OpenRouter devolvio un formato invalido.");
-  }
-
-  return parsed;
 }
 
 app.get("/health", (req, res) => {
