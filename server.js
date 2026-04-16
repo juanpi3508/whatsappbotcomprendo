@@ -1,6 +1,7 @@
 import express from "express";
 import dotenv from "dotenv";
 import twilio from "twilio";
+import { GoogleGenAI } from "@google/genai";
 
 dotenv.config();
 
@@ -15,51 +16,67 @@ const twilioClient = twilio(
   process.env.TWILIO_AUTH_TOKEN
 );
 
+const ai = new GoogleGenAI({
+  apiKey: process.env.GEMINI_API_KEY,
+});
+
 const state = {
   question: null,
   correctAnswer: null,
   responses: []
 };
 
-function generateQuestion(topic) {
-  const t = String(topic || "").toLowerCase();
-
-  if (t.includes("ecuaciones")) {
-    return {
-      question: "¿Cuál es el valor de x en 2x + 3 = 11?",
-      options: {
-        A: "3",
-        B: "4",
-        C: "5",
-        D: "6"
-      },
-      correct: "B"
-    };
+function cleanJson(text) {
+  if (!text) {
+    throw new Error("Gemini no devolvio texto.");
   }
 
-  if (t.includes("fotosintesis")) {
-    return {
-      question: "¿Qué necesitan las plantas para realizar la fotosíntesis?",
-      options: {
-        A: "Luz solar, agua y dióxido de carbono",
-        B: "Solo oxígeno",
-        C: "Solo agua",
-        D: "Solo tierra"
-      },
-      correct: "A"
-    };
+  return text
+    .replace(/```json/gi, "")
+    .replace(/```/g, "")
+    .trim();
+}
+
+async function generateQuestion(topic) {
+  const response = await ai.models.generateContent({
+    model: "gemini-2.0-flash",
+    contents: `Devuelve SOLO JSON valido con exactamente esta estructura:
+{
+  "question": "pregunta corta sobre ${topic}",
+  "options": {
+    "A": "opcion",
+    "B": "opcion",
+    "C": "opcion",
+    "D": "opcion"
+  },
+  "correct": "A"
+}
+
+Reglas:
+- Una sola pregunta
+- 4 opciones
+- Una sola respuesta correcta
+- Nivel bachillerato
+- No expliques nada fuera del JSON`
+  });
+
+  const rawText = response.text;
+  const cleaned = cleanJson(rawText);
+  const parsed = JSON.parse(cleaned);
+
+  if (
+    !parsed.question ||
+    !parsed.options ||
+    !parsed.options.A ||
+    !parsed.options.B ||
+    !parsed.options.C ||
+    !parsed.options.D ||
+    !["A", "B", "C", "D"].includes(parsed.correct)
+  ) {
+    throw new Error("Gemini devolvio un formato invalido.");
   }
 
-  return {
-    question: `¿Cuál fue la idea principal de la clase sobre ${topic}?`,
-    options: {
-      A: "Un concepto secundario",
-      B: "La idea central explicada en clase",
-      C: "Un tema no relacionado",
-      D: "Una fecha del calendario"
-    },
-    correct: "B"
-  };
+  return parsed;
 }
 
 app.get("/health", (req, res) => {
@@ -83,7 +100,7 @@ app.post("/start-class", async (req, res) => {
     const topic = req.body.topic || "ecuaciones lineales";
     const studentNumber = req.body.studentNumber || process.env.STUDENT_NUMBER;
 
-    const q = generateQuestion(topic);
+    const q = await generateQuestion(topic);
 
     state.question = q;
     state.correctAnswer = q.correct;
@@ -134,7 +151,7 @@ app.post("/whatsapp", async (req, res) => {
     }
 
     if (!["A", "B", "C", "D"].includes(answer)) {
-      twiml.message("Respuesta no válida. Responde solo con A, B, C o D.");
+      twiml.message("Respuesta no valida. Responde solo con A, B, C o D.");
       return res.type("text/xml").send(twiml.toString());
     }
 
