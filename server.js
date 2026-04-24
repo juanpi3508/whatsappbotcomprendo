@@ -49,7 +49,7 @@ async function generateQuestion(topic) {
           },
           {
             role: "user",
-            content: `Genera 1 pregunta de opcion multiple sobre ${topic}.
+            content: `Genera 1 pregunta coherente de opcion multiple con una sola opción valida sobre ${topic}.
 Devuelve SOLO este formato JSON:
 {"question":"texto","options":{"A":"texto","B":"texto","C":"texto","D":"texto"},"correct":"A"}`
           }
