@@ -221,13 +221,19 @@ app.post("/whatsapp", async (req, res) => {
       await twilioClient.messages.create({
         from: process.env.TWILIO_WHATSAPP_NUMBER,
         to: process.env.TEACHER_NUMBER,
-        body: `Nuevo reporte
+    
+body: `Nuevo reporte
 
 Estudiante: ${from}
 Pregunta: ${state.question.question}
+A) ${state.question.options.A}
+B) ${state.question.options.B}
+C) ${state.question.options.C}
+D) ${state.question.options.D}
+
 Respuesta estudiante: ${answer}
-Respuesta correcta: ${correct}
-Resultado: ${isCorrect ? "Correcto" : "Incorrecto"}`
+Respuesta correcta: ${correct} - ${state.question.options[correct]}
+Resultado: ${isCorrect ? "Correcto ✅" : "Incorrecto ❌"}`
       });
     }
 
